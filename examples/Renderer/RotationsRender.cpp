@@ -12,7 +12,7 @@ void RotationsRender::draw(SkCanvas* canvas, int elapsed, int w, int h)
     canvas->rotate(SkIntToScalar(20));
     paint.setColor(0xffDB4437);
     canvas->drawRect(rect, paint);
-    canvas->flush();
+    // Note: flush() removed in new Skia API
 }
 
 void RotationsRender::init(int w, int h)

@@ -1,4 +1,7 @@
 TEMPLATE = lib
+QT += gui
+# Add OpenGL module for Qt6 compatibility
+qtHaveModule(opengl): QT += opengl
 DEFINES += QTSKIA_LIBRARY
 
 include($$absolute_path($$PWD/../QtSkiaGuiPublic.pri))

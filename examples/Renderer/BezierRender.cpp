@@ -1,10 +1,11 @@
 #include "BezierRender.h"
+#include "core/SkPathBuilder.h"
 
 void BezierRender::draw(SkCanvas* canvas, int elapsed, int w, int h)
 {
     canvas->drawColor(SK_ColorWHITE);
     canvas->drawPath(path, paint);
-    canvas->flush();
+    // Note: flush() removed in new Skia API - rendering is handled by the surface
 }
 
 void BezierRender::init(int w, int h)
@@ -15,9 +16,12 @@ void BezierRender::init(int w, int h)
     paint.setAntiAlias(true);
     paint.setStrokeCap(SkPaint::kRound_Cap);
 
-    path.moveTo(10, 10);
-    path.quadTo(256, 64, 128, 128);
-    path.quadTo(10, 192, 250, 250);
+    // Use SkPathBuilder for new Skia API
+    SkPathBuilder builder;
+    builder.moveTo(10, 10);
+    builder.quadTo(256, 64, 128, 128);
+    builder.quadTo(10, 192, 250, 250);
+    path = builder.detach();
 }
 
 void BezierRender::resize(int w, int h)

@@ -2,18 +2,23 @@
 
 #include "core/SkImageInfo.h"
 #include "core/SkSurface.h"
-#include "gpu/GrContext.h"
-#include "gpu/gl/GrGLInterface.h"
+#include "core/SkCanvas.h"
+#include "core/SkPixmap.h"
+// Skia API changes: GrContext moved to ganesh
+#include "gpu/ganesh/GrDirectContext.h"
 #include "core/SkData.h"
 #include "core/SkImage.h"
 #include "core/SkStream.h"
 
-#include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QResizeEvent>
 #include <QPainter>
 #include <QImage>
 #include <QDebug>
+
+// Use SkSurfaces namespace for WrapPixels
+using SkSurfaces::WrapPixels;
 class QSkiaWidgetPrivate {
 public:
     sk_sp<SkSurface> rasterSurface = nullptr;
@@ -21,7 +26,7 @@ public:
     QImage image;
     QByteArray data;
     QTimer timer;
-    QTime lastTime;
+    QElapsedTimer lastTime;
 };
 QSkiaWidget::QSkiaWidget(QWidget* parent)
     : QWidget(parent)
@@ -41,12 +46,14 @@ QSkiaWidget::~QSkiaWidget()
 void QSkiaWidget::init(int w, int h)
 {
     m_dptr->info = SkImageInfo::Make(w, h, SkColorType::kRGBA_8888_SkColorType, kUnpremul_SkAlphaType);
-    size_t rowByts = m_dptr->info.minRowBytes();
-    size_t size = m_dptr->info.computeByteSize(rowByts);
+    size_t rowBytes = m_dptr->info.minRowBytes();
+    size_t size = m_dptr->info.computeByteSize(rowBytes);
     m_dptr->data.resize(static_cast<int>(size));
-    m_dptr->rasterSurface = SkSurface::MakeRasterDirect(m_dptr->info, m_dptr->data.data(), rowByts);
+    // Skia API change: Use global WrapPixels function
+    SkPixmap pixmap(m_dptr->info, m_dptr->data.data(), rowBytes);
+    m_dptr->rasterSurface = WrapPixels(pixmap);
     if (!m_dptr->rasterSurface) {
-        qDebug() <<"SkSurface::MakeRasterN32Premul return null";
+        qDebug() <<"WrapPixels return null";
         return;
     }
 }
@@ -63,8 +70,9 @@ void QSkiaWidget::paintEvent(QPaintEvent* event)
     if (!canvas) {
         return;
     }
+    // Qt6 API change: Use QElapsedTimer instead of QTime
     const auto elapsed = m_dptr->lastTime.elapsed();
-    m_dptr->lastTime = QTime::currentTime();
+    m_dptr->lastTime.restart();
     canvas->save();
     this->draw(canvas, elapsed);
     canvas->restore();

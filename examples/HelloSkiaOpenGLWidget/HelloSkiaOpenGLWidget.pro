@@ -1,5 +1,5 @@
 TEMPLATE = app
-QT += widgets
+QT += widgets openglwidgets
 
 include($$absolute_path($$PWD/../../QtSkia/QtSkiaWidgetPublic.pri))
 include($$absolute_path($$PWD/../Renderer/Renderer.pri))

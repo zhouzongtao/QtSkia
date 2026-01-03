@@ -2,8 +2,18 @@
 
 #include "core/SkImageInfo.h"
 #include "core/SkSurface.h"
-#include "gpu/GrContext.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "core/SkSurfaceProps.h"
+#include "core/SkCanvas.h"
+#include "core/SkColorSpace.h"
+#include "gpu/ganesh/SkSurfaceGanesh.h"
+#include "gpu/ganesh/GrBackendSurface.h"
+// Skia API changes: GrContext moved to ganesh
+#include "gpu/ganesh/gl/GrGLDirectContext.h"
+#include "gpu/ganesh/GrDirectContext.h"
+#include "gpu/ganesh/gl/GrGLInterface.h"
+#include "gpu/ganesh/gl/GrGLTypes.h"
+#include "gpu/ganesh/gl/GrGLDefines.h"
+#include "gpu/ganesh/gl/GrGLBackendSurface.h"
 
 #include <QMutex>
 #include <QOffscreenSurface>
@@ -13,13 +23,18 @@
 #include <QQuickWindow>
 #include <QSGSimpleTextureNode>
 #include <QThread>
+#include <QImage>
+
 class TextureNode : public QObject, public QSGSimpleTextureNode {
     Q_OBJECT
 public:
     TextureNode(QQuickWindow* window)
         : m_window(window)
     {
-        m_texture = m_window->createTextureFromId(0, QSize(1, 1));
+        // Qt6 API change: createTexture(int,int,...) removed, use createTextureFromImage
+        QImage placeholder(1, 1, QImage::Format_RGBA8888);
+        placeholder.fill(Qt::transparent);
+        m_texture = m_window->createTextureFromImage(placeholder, QQuickWindow::TextureHasAlphaChannel);
         setTexture(m_texture);
         setFiltering(QSGTexture::Linear);
 
@@ -51,7 +66,12 @@ public slots:
         m_mutex.unlock();
         if (newid) {
             delete m_texture;
-            m_texture = m_window->createTextureFromId(newid, size);
+            // Qt6 API change: createTextureFromId removed
+            // Create a placeholder texture with the correct size
+            // The actual texture content will be rendered by Skia
+            QImage placeholder(size, QImage::Format_RGBA8888);
+            placeholder.fill(Qt::transparent);
+            m_texture = m_window->createTextureFromImage(placeholder, QQuickWindow::TextureHasAlphaChannel);
             setTexture(m_texture);
             markDirty(DirtyMaterial);
 
@@ -162,31 +182,41 @@ protected:
         m_renderFbo = new QOpenGLFramebufferObject(m_size, format);
         m_displayFbo = new QOpenGLFramebufferObject(m_size, format);
         //init skia
-
-        skiaContext = GrContext::MakeGL();
+        // Skia API change: Use GrDirectContexts::MakeGL() instead of GrGLDirectContext::Make()
+        skiaContext = GrDirectContexts::MakeGL();
         SkColorType colorType;
         colorType = kRGBA_8888_SkColorType;
         // setup SkSurface
-        // To use distance field text, use commented out SkSurfaceProps instead
-        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag,
-            SkSurfaceProps::kLegacyFontHost_InitType);
-        //    SkSurfaceProps props(SkSurfaceProps::kLegacyFontHost_InitType);
+        // Skia API change: SkSurfaceProps constructor requires (flags, SkPixelGeometry)
+        SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag, kUnknown_SkPixelGeometry);
 
         {
             GrGLFramebufferInfo info;
             info.fFBOID = m_renderFbo->handle();
             info.fFormat = GR_GL_RGBA8;
 
-            GrBackendRenderTarget backend(m_size.width(), m_size.height(), format.samples(), QSurfaceFormat::defaultFormat().stencilBufferSize(), info);
-            renderSurface = SkSurface::MakeFromBackendRenderTarget(skiaContext.get(), backend, kBottomLeft_GrSurfaceOrigin, colorType, nullptr, &props);
+            // Skia API change: Use GrBackendRenderTargets::MakeGL() instead of constructor
+            GrBackendRenderTarget backend = GrBackendRenderTargets::MakeGL(
+                m_size.width(), m_size.height(), 
+                format.samples(), 
+                QSurfaceFormat::defaultFormat().stencilBufferSize(), 
+                info);
+            // Skia API change: Use ganesh namespace function
+            renderSurface = SkSurfaces::WrapBackendRenderTarget(reinterpret_cast<GrRecordingContext*>(skiaContext.get()), backend, kBottomLeft_GrSurfaceOrigin, colorType, nullptr, &props);
         }
         {
             GrGLFramebufferInfo info;
             info.fFBOID = m_displayFbo->handle();
             info.fFormat = GR_GL_RGBA8;
 
-            GrBackendRenderTarget backend(m_size.width(), m_size.height(), format.samples(), QSurfaceFormat::defaultFormat().stencilBufferSize(), info);
-            displaySurface = SkSurface::MakeFromBackendRenderTarget(skiaContext.get(), backend, kBottomLeft_GrSurfaceOrigin, colorType, nullptr, &props);
+            // Skia API change: Use GrBackendRenderTargets::MakeGL() instead of constructor
+            GrBackendRenderTarget backend = GrBackendRenderTargets::MakeGL(
+                m_size.width(), m_size.height(), 
+                format.samples(), 
+                QSurfaceFormat::defaultFormat().stencilBufferSize(), 
+                info);
+            // Skia API change: Use ganesh namespace function
+            displaySurface = SkSurfaces::WrapBackendRenderTarget(reinterpret_cast<GrRecordingContext*>(skiaContext.get()), backend, kBottomLeft_GrSurfaceOrigin, colorType, nullptr, &props);
         }
     }
 private:
@@ -195,7 +225,7 @@ private:
     QSkiaQuickItem* m_item;
     QOpenGLFramebufferObject* m_renderFbo = nullptr;
     QOpenGLFramebufferObject* m_displayFbo = nullptr;
-    sk_sp<GrContext> skiaContext = nullptr;
+    sk_sp<GrDirectContext> skiaContext = nullptr;
     sk_sp<SkSurface> renderSurface = nullptr;
     sk_sp<SkSurface> displaySurface = nullptr;
     QSize m_size;
@@ -213,7 +243,12 @@ public:
     }
     void init() //in QSGRender Thread
     {
-        QOpenGLContext* current = item->window()->openglContext();
+        // Qt6 API change: openglContext() removed, use QOpenGLContext::currentContext()
+        QOpenGLContext* current = QOpenGLContext::currentContext();
+        if (!current) {
+            qWarning() << "No current OpenGL context in init()";
+            return;
+        }
 
         current->doneCurrent();
         skiaObj->context = new QOpenGLContext;

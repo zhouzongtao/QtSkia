@@ -2,11 +2,15 @@
 
 #include "core/SkImageInfo.h"
 #include "core/SkSurface.h"
-#include "gpu/GrContext.h"
-#include "gpu/gl/GrGLInterface.h"
+#include "core/SkCanvas.h"
+#include "gpu/ganesh/SkSurfaceGanesh.h"
+// Skia API changes: GrContext moved to ganesh
+#include "gpu/ganesh/GrDirectContext.h"
+#include "gpu/ganesh/gl/GrGLDirectContext.h"
+#include "gpu/ganesh/gl/GrGLInterface.h"
 
 #include <QOpenGLFunctions>
-#include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 #include <QGuiApplication>
 #include <QScreen>
@@ -14,12 +18,12 @@
 class QSkiaOpenGLWidgetPrivate {
 public:
     QOpenGLFunctions funcs;
-    sk_sp<GrGLInterface> glInterface = nullptr;
-    sk_sp<GrContext> context = nullptr;
+    sk_sp<const GrGLInterface> glInterface = nullptr;
+    sk_sp<GrDirectContext> context = nullptr;
     sk_sp<SkSurface> gpuSurface = nullptr;
     SkImageInfo info;
     QTimer timer;
-    QTime lastTime;
+    QElapsedTimer lastTime;
 };
 QSkiaOpenGLWidget::QSkiaOpenGLWidget(QWidget* parent)
     : QOpenGLWidget(parent)
@@ -40,10 +44,11 @@ QSkiaOpenGLWidget::~QSkiaOpenGLWidget()
 void QSkiaOpenGLWidget::initializeGL()
 {
     m_dptr->funcs.initializeOpenGLFunctions();
-    m_dptr->context = GrContext::MakeGL(m_dptr->glInterface);
+    // Skia API change: Use GrDirectContexts::MakeGL() without parameters
+    m_dptr->context = GrDirectContexts::MakeGL();
     SkASSERT(m_dptr->context);
     init(this->width(), this->height());
-    m_dptr->lastTime = QTime::currentTime();
+    m_dptr->lastTime.start();
 }
 
 void QSkiaOpenGLWidget::resizeGL(int w, int h)
@@ -57,9 +62,15 @@ void QSkiaOpenGLWidget::resizeGL(int w, int h)
 void QSkiaOpenGLWidget::init(int w, int h)
 {
     m_dptr->info = SkImageInfo::MakeN32Premul(w, h);
-    m_dptr->gpuSurface = SkSurface::MakeRenderTarget(m_dptr->context.get(), SkBudgeted::kNo, m_dptr->info);
+    // Skia API change: Use SkSurfaces::RenderTarget with skgpu::Budgeted
+    // GrDirectContext inherits from GrRecordingContext, use reinterpret_cast
+    m_dptr->gpuSurface = SkSurfaces::RenderTarget(
+        reinterpret_cast<GrRecordingContext*>(m_dptr->context.get()),
+        skgpu::Budgeted::kNo,
+        m_dptr->info
+    );
     if (!m_dptr->gpuSurface) {
-        qDebug() << "SkSurface::MakeRenderTarget return null";
+        qDebug() << "SkSurfaces::RenderTarget return null";
         return;
     }
     m_dptr->funcs.glViewport(0, 0, w, h);
@@ -77,8 +88,9 @@ void QSkiaOpenGLWidget::paintGL()
     if (!canvas) {
         return;
     }
+    // Qt6 API change: Use QElapsedTimer instead of QTime
     const auto elapsed = m_dptr->lastTime.elapsed();
-    m_dptr->lastTime = QTime::currentTime();
+    m_dptr->lastTime.restart();
     canvas->save();
     this->draw(canvas, elapsed);
     canvas->restore();

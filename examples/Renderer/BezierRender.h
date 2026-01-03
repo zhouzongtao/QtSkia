@@ -3,6 +3,7 @@
 #include "core/SkCanvas.h"
 #include "core/SkPaint.h"
 #include "core/SkPath.h"
+#include "core/SkPathBuilder.h"
 
 class BezierRender : public IRender {
 public:

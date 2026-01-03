@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QtGlobal>
-#ifndef QT_STATIC
+#ifndef QTSKIA_STATIC
 #if defined(QTSKIA_LIBRARY)
     #define QtSkia_API Q_DECL_EXPORT
 #else 

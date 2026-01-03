@@ -1,4 +1,5 @@
 TEMPLATE = app
+QT += opengl
 
 include($$absolute_path($$PWD/../../QtSkia/QtSkiaGuiPublic.pri))
 include($$absolute_path($$PWD/../Renderer/Renderer.pri))

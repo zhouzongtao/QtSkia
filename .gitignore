@@ -1,3 +1,44 @@
 bin
 *.user
 .vscode
+
+# Build artifacts
+Makefile*
+Makefile.*
+*.Debug
+*.Release
+debug/
+release/
+*.obj
+*.exe
+*.lib
+*.dll
+*.pdb
+*.ilk
+*.exp
+
+# qmake artifacts
+.qmake.stash
+*.stash
+
+# Build output logs
+build_output*.txt
+build_*.txt
+*_output.txt
+nmake_*.txt
+vs_env.txt
+
+# Build scripts (temporary)
+build.bat
+build_*.bat
+build_*.cmd
+rebuild.bat
+test_build.bat
+temp_build.bat
+full_build.bat
+run_qmake.cmd
+
+# Documentation (keep these, just separating)
+BUILD_WITH_VS2022.md
+REBUILD_INSTRUCTIONS.md
+QT6_MIGRATION_*.md

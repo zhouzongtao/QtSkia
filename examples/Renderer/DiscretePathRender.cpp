@@ -1,23 +1,26 @@
 #include "DiscretePathRender.h"
 
+#include "core/SkPathBuilder.h"
 #include "effects/SkDiscretePathEffect.h"
+
 static SkPath star()
 {
     const SkScalar R = 115.2f, C = 128.0f;
-    SkPath path;
-    path.moveTo(C + R, C);
+    SkPathBuilder builder;
+    builder.moveTo(C + R, C);
     for (int i = 1; i < 8; ++i) {
         SkScalar a = 2.6927937f * i;
-        path.lineTo(C + R * cos(a), C + R * sin(a));
+        builder.lineTo(C + R * cos(a), C + R * sin(a));
     }
-    return path;
+    return builder.detach();
 }
+
 void DiscretePathRender::draw(SkCanvas* canvas, int elapsed, int w, int h)
 {
     canvas->clear(SK_ColorWHITE);
 
     canvas->drawPath(path, paint);
-    canvas->flush();
+    // Note: flush() removed in new Skia API
 }
 
 void DiscretePathRender::init(int w, int h)

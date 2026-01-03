@@ -26,7 +26,7 @@ void ShapesRender::draw(SkCanvas* canvas, int elapsed, int w, int h)
     paint.setColor(0xffF4B400);
     paint.setStyle(SkPaint::kStroke_Style);
     canvas->drawRoundRect(rect, 10, 10, paint);
-    canvas->flush();
+    // Note: flush() removed in new Skia API
 }
 
 void ShapesRender::init(int w, int h)

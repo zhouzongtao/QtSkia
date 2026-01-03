@@ -5,18 +5,20 @@
 #include "core/SkCanvas.h"
 #include "core/SkFont.h"
 #include "core/SkPaint.h"
+#include "core/SkPathBuilder.h"
 #include "effects/SkDashPathEffect.h"
 #include "effects/SkDiscretePathEffect.h"
+
 static SkPath star()
 {
     const SkScalar R = 115.2f, C = 128.0f;
-    SkPath path;
-    path.moveTo(C + R, C);
+    SkPathBuilder builder;
+    builder.moveTo(C + R, C);
     for (int i = 1; i < 8; ++i) {
         SkScalar a = 2.6927937f * i;
-        path.lineTo(C + R * cos(a), C + R * sin(a));
+        builder.lineTo(C + R * cos(a), C + R * sin(a));
     }
-    return path;
+    return builder.detach();
 }
 
 class SkiaQuickWindow : public QSkiaQuickWindow {
@@ -26,8 +28,9 @@ public:
     {
         const SkScalar intervals[] = { 10.0f, 5.0f, 2.0f, 5.0f };
         size_t count = sizeof(intervals) / sizeof(intervals[0]);
+        // New Skia API uses SkSpan for intervals
         m_effect = SkPathEffect::MakeCompose(
-            SkDashPathEffect::Make(intervals, count, 0.0f),
+            SkDashPathEffect::Make(SkSpan<const SkScalar>(intervals, count), 0.0f),
             SkDiscretePathEffect::Make(10.0f, 4.0f));
         m_path = star();
 
@@ -53,19 +56,19 @@ public:
         font.setSize(30);
         canvas->clear(SK_ColorWHITE);
 
-        canvas->rotate(m_rotateAngle, w / 2, h / 2);
-        canvas->drawString("Hello Skia", w / 2 - 20, h / 2, font, p);
+        canvas->rotate(static_cast<SkScalar>(m_rotateAngle), static_cast<SkScalar>(w / 2), static_cast<SkScalar>(h / 2));
+        canvas->drawString("Hello Skia", static_cast<SkScalar>(w / 2 - 20), static_cast<SkScalar>(h / 2), font, p);
         canvas->drawLine(w * 0.2f, h * 0.2f, w * 0.4f, h * 0.4f, p);
 
-        canvas->flush();
+        // Note: flush() removed in new Skia API
     }
     virtual void drawAfterSG(SkCanvas* canvas, int elapsed) override
     {
         int w = this->width();
         int h = this->height();
-        canvas->rotate(m_rotateAngle, w / 2, h / 2);
+        canvas->rotate(static_cast<SkScalar>(m_rotateAngle), static_cast<SkScalar>(w / 2), static_cast<SkScalar>(h / 2));
         canvas->drawPath(m_path, m_paint);
-        canvas->flush();
+        // Note: flush() removed in new Skia API
     }
 
 private:

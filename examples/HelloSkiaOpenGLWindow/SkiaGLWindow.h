@@ -2,19 +2,22 @@
 #include "QSkiaOpenGLWindow.h"
 #include "core/SkCanvas.h"
 #include "core/SkPaint.h"
+#include "core/SkPathBuilder.h"
 #include "effects/SkDashPathEffect.h"
 #include "effects/SkDiscretePathEffect.h"
+
 static SkPath star()
 {
     const SkScalar R = 115.2f, C = 128.0f;
-    SkPath path;
-    path.moveTo(C + R, C);
+    SkPathBuilder builder;
+    builder.moveTo(C + R, C);
     for (int i = 1; i < 8; ++i) {
         SkScalar a = 2.6927937f * i;
-        path.lineTo(C + R * cos(a), C + R * sin(a));
+        builder.lineTo(C + R * cos(a), C + R * sin(a));
     }
-    return path;
+    return builder.detach();
 }
+
 class SkiaGLWindow : public QSkiaOpenGLWindow {
     Q_OBJECT
 public:
@@ -22,8 +25,9 @@ public:
     {
         const SkScalar intervals[] = { 10.0f, 5.0f, 2.0f, 5.0f };
         size_t count = sizeof(intervals) / sizeof(intervals[0]);
+        // New Skia API uses SkSpan for intervals
         m_effect = SkPathEffect::MakeCompose(
-            SkDashPathEffect::Make(intervals, count, 0.0f),
+            SkDashPathEffect::Make(SkSpan<const SkScalar>(intervals, count), 0.0f),
             SkDiscretePathEffect::Make(10.0f, 4.0f));
         m_path = star();
 
@@ -43,7 +47,7 @@ public:
 
         canvas->drawPath(m_path, m_paint);
 
-        canvas->flush();
+        // Note: flush() removed in new Skia API
     }
 
 private:

@@ -2,8 +2,14 @@
 
 #include "core/SkImageInfo.h"
 #include "core/SkSurface.h"
-#include "gpu/GrContext.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "core/SkCanvas.h"
+#include "gpu/ganesh/SkSurfaceGanesh.h"
+// Skia API changes: GrContext moved to ganesh
+#include "gpu/ganesh/gl/GrGLDirectContext.h"
+#include "gpu/ganesh/GrDirectContext.h"
+#include "gpu/ganesh/gl/GrGLInterface.h"
+#include "gpu/ganesh/gl/GrGLTypes.h"
+#include "gpu/ganesh/gl/GrGLDefines.h"
 
 #include <QDebug>
 #include <QOpenGLContext>
@@ -13,7 +19,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QResizeEvent>
-#include <QTime>
+#include <QElapsedTimer>
 #include <QTimer>
 //InnerItem. 内部用的旋转动画Item，用来驱动QSkiaQuickWindow的渲染.
 class InnerItem : public QQuickItem {
@@ -47,10 +53,10 @@ private:
 
 class QSkiaQuickWindowPrivate {
 public:
-    sk_sp<GrContext> context = nullptr;
+    sk_sp<GrDirectContext> context = nullptr;
     sk_sp<SkSurface> gpuSurface = nullptr;
-    QTime lastTimeA;
-    QTime lastTimeB;
+    QElapsedTimer lastTimeA;
+    QElapsedTimer lastTimeB;
     InnerItem innerItem;
     std::atomic<bool> hasCleaned = false;
     std::atomic<bool> hasResize = false;
@@ -62,7 +68,7 @@ QSkiaQuickWindow::QSkiaQuickWindow(QWindow* parent)
 {
     connect(this, &QQuickWindow::sceneGraphInitialized, this, &QSkiaQuickWindow::onSGInited, Qt::DirectConnection);
     connect(this, &QQuickWindow::sceneGraphInvalidated, this, &QSkiaQuickWindow::onSGUninited, Qt::DirectConnection);
-    setClearBeforeRendering(false);
+    // Qt6 API change: setClearBeforeRendering() removed, default is false
 }
 
 QSkiaQuickWindow::~QSkiaQuickWindow()
@@ -99,11 +105,12 @@ void QSkiaQuickWindow::onSGInited()
     //设置innerItem,驱动渲染循环
     m_dptr->innerItem.setParentItem(contentItem());
 
-    m_dptr->context = GrContext::MakeGL();
+    // Skia API change: Use GrDirectContexts::MakeGL() instead of GrGLDirectContext::Make()
+    m_dptr->context = GrDirectContexts::MakeGL();
     SkASSERT(m_dptr->context);
     init(this->width(), this->height());
-    m_dptr->lastTimeA = QTime::currentTime();
-    m_dptr->lastTimeB = QTime::currentTime();
+    m_dptr->lastTimeA.restart();
+    m_dptr->lastTimeB.restart();
     onInit(this->width(), this->height());
 }
 
@@ -116,33 +123,28 @@ void QSkiaQuickWindow::onSGUninited()
 
 void QSkiaQuickWindow::init(int w, int h)
 {
-    //    auto info = SkImageInfo::MakeN32Premul(w, h);
-    //    m_dptr->gpuSurface = SkSurface::MakeRenderTarget(m_dptr->context.get(), SkBudgeted::kNo, info);
-
-    GrGLFramebufferInfo info;
-    info.fFBOID = openglContext()->defaultFramebufferObject();
-    SkColorType colorType;
-    colorType = kRGBA_8888_SkColorType;
-    if (format().renderableType() == QSurfaceFormat::RenderableType::OpenGLES) {
-        info.fFormat = GR_GL_BGRA8;
-    } else {
-        info.fFormat = GR_GL_RGBA8;
-    }
-    GrBackendRenderTarget backend(w, h, format().samples(), format().stencilBufferSize(), info);
-    // setup SkSurface
-    // To use distance field text, use commented out SkSurfaceProps instead
-    SkSurfaceProps props(SkSurfaceProps::kUseDeviceIndependentFonts_Flag,
-        SkSurfaceProps::kLegacyFontHost_InitType);
-    //    SkSurfaceProps props(SkSurfaceProps::kLegacyFontHost_InitType);
-
-    m_dptr->gpuSurface = SkSurface::MakeFromBackendRenderTarget(m_dptr->context.get(), backend, kBottomLeft_GrSurfaceOrigin, colorType, nullptr, &props);
-
-    if (!m_dptr->gpuSurface) {
-        qDebug() << "SkSurface::MakeRenderTarget return null";
+    // Qt6 API change: Use QOpenGLContext::currentContext() instead of openglContext()
+    auto* glContext = QOpenGLContext::currentContext();
+    if (!glContext) {
+        qDebug() << "No current OpenGL context";
         return;
     }
-    if (openglContext() && openglContext()->functions()) {
-        openglContext()->functions()->glViewport(0, 0, w, h);
+
+    // Use RenderTarget approach like QSkiaOpenGLWindow
+    // This creates an offscreen render target instead of wrapping the default FBO
+    auto info = SkImageInfo::MakeN32Premul(w, h);
+    m_dptr->gpuSurface = SkSurfaces::RenderTarget(
+        reinterpret_cast<GrRecordingContext*>(m_dptr->context.get()),
+        skgpu::Budgeted::kNo,
+        info
+    );
+
+    if (!m_dptr->gpuSurface) {
+        qDebug() << "SkSurfaces::RenderTarget return null";
+        return;
+    }
+    if (glContext && glContext->functions()) {
+        glContext->functions()->glViewport(0, 0, w, h);
     }
 }
 
@@ -159,7 +161,8 @@ void QSkiaQuickWindow::resizeEvent(QResizeEvent* e)
 void QSkiaQuickWindow::onBeforeSync()
 {
     if (m_dptr->hasResize || m_dptr->hasCleaned) {
-        m_dptr->context = GrContext::MakeGL();
+        // Skia API change: Use GrDirectContexts::MakeGL() instead of GrGLDirectContext::Make()
+        m_dptr->context = GrDirectContexts::MakeGL();
         SkASSERT(m_dptr->context);
         init(this->width(), this->height());
         m_dptr->hasCleaned = false;
@@ -190,7 +193,7 @@ void QSkiaQuickWindow::onBeforeRendering()
     }
     //    qWarning() << __FUNCTION__;
     const auto elapsed = m_dptr->lastTimeB.elapsed();
-    m_dptr->lastTimeB = QTime::currentTime();
+    m_dptr->lastTimeB.restart();
     canvas->save();
     this->drawBeforeSG(canvas, elapsed);
     canvas->restore();
@@ -210,7 +213,7 @@ void QSkiaQuickWindow::onAfterRendering()
     }
     //    qWarning() << __FUNCTION__;
     const auto elapsed = m_dptr->lastTimeA.elapsed();
-    m_dptr->lastTimeA = QTime::currentTime();
+    m_dptr->lastTimeA.restart();
     canvas->save();
     this->drawAfterSG(canvas, elapsed);
     canvas->restore();
